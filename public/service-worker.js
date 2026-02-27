@@ -22,3 +22,13 @@ self.addEventListener('notificationclick', function(event) {
     clients.openWindow('/')
   );
 });
+
+// Added fetch handler to make the PWA installable and more reliable
+self.addEventListener('fetch', function(event) {
+  // Basic fetch handler - required for PWA installability
+  event.respondWith(
+    fetch(event.request).catch(function() {
+      return new Response('Offline');
+    })
+  );
+});

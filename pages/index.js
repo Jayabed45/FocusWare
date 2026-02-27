@@ -32,10 +32,28 @@ export default function Home() {
   };
 
   // Show browser notification
-  const showNotification = (title, body) => {
+  const showNotification = async (title, body) => {
     if (typeof window === 'undefined' || !('Notification' in window)) return;
+    
     if (Notification.permission === 'granted') {
       try {
+        // Try to show via service worker for better background support
+        if ('serviceWorker' in navigator) {
+          const registration = await navigator.serviceWorker.ready;
+          if (registration.showNotification) {
+            registration.showNotification(title, {
+              body,
+              icon: '/favicon.ico',
+              badge: '/favicon.ico',
+              vibrate: [100, 50, 100],
+              tag: 'focus-timer-notification',
+              renotify: true
+            });
+            return;
+          }
+        }
+        
+        // Fallback to standard notification
         new Notification(title, { 
           body,
           icon: '/favicon.ico'
