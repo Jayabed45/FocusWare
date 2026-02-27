@@ -32,12 +32,11 @@ export default function Home() {
   };
 
   // Show browser notification
-  const showNotification = async (title, body) => {
+  const showNotification = async (title, body, silent = false) => {
     if (typeof window === 'undefined' || !('Notification' in window)) return;
     
     if (Notification.permission === 'granted') {
       try {
-        // Try to show via service worker for better background support
         if ('serviceWorker' in navigator) {
           const registration = await navigator.serviceWorker.ready;
           if (registration.showNotification) {
@@ -45,18 +44,21 @@ export default function Home() {
               body,
               icon: '/favicon.ico',
               badge: '/favicon.ico',
-              vibrate: [100, 50, 100],
+              vibrate: silent ? [] : [100, 50, 100],
               tag: 'focus-timer-notification',
-              renotify: true
+              renotify: !silent,
+              silent: silent,
+              requireInteraction: !silent // Keep it on lockscreen if it's an alert
             });
             return;
           }
         }
         
-        // Fallback to standard notification
         new Notification(title, { 
           body,
-          icon: '/favicon.ico'
+          icon: '/favicon.ico',
+          tag: 'focus-timer-notification',
+          silent: silent
         });
       } catch (e) {
         console.error("Notification failed:", e);
@@ -159,6 +161,11 @@ export default function Home() {
         const now = Date.now();
         const remaining = Math.round((endTimeRef.current - now) / 1000);
 
+        // Send keep-alive message to Service Worker
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({ type: 'KEEP_ALIVE' });
+        }
+
         if (remaining <= 0) {
           clearInterval(intervalRef.current);
           setIsRunning(false);
@@ -198,6 +205,16 @@ export default function Home() {
             return;
           }
         }
+        
+        // Update notification every 1 minute to show progress on lockscreen
+        if (remaining > 0 && remaining % 60 === 0) {
+          showNotification(
+            isBreak ? 'Break Progress' : 'Focus Progress', 
+            `${formatTime(remaining)} remaining`,
+            true // silent update
+          );
+        }
+        
         setTimeLeft(remaining);
       }, 1000);
     } else {
