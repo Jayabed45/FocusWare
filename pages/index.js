@@ -21,6 +21,51 @@ export default function Home() {
   const intervalRef = useRef(null);
   const progressRef = useRef(null);
   const audioRef = useRef(null);
+  const endTimeRef = useRef(null);
+
+  // Request notification permission
+  const requestNotificationPermission = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    if (Notification.permission === 'default') {
+      await Notification.requestPermission();
+    }
+  };
+
+  // Show browser notification
+  const showNotification = (title, body) => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    if (Notification.permission === 'granted') {
+      try {
+        new Notification(title, { 
+          body,
+          icon: '/favicon.ico'
+        });
+      } catch (e) {
+        console.error("Notification failed:", e);
+      }
+    }
+  };
+
+  // Sync with localStorage on mount to recover active timer
+  useEffect(() => {
+    const savedEndTime = localStorage.getItem('focuswareEndTime');
+    const savedIsRunning = localStorage.getItem('focuswareIsRunning') === 'true';
+    const savedIsBreak = localStorage.getItem('focuswareIsBreak') === 'true';
+    
+    if (savedEndTime && savedIsRunning) {
+      const end = parseInt(savedEndTime);
+      const now = Date.now();
+      if (end > now) {
+        endTimeRef.current = end;
+        setIsRunning(true);
+        setIsBreak(savedIsBreak);
+        setTimeLeft(Math.round((end - now) / 1000));
+      } else {
+        localStorage.removeItem('focuswareEndTime');
+        localStorage.removeItem('focuswareIsRunning');
+      }
+    }
+  }, []);
 
   // Calculate display time
   const displayHours = Math.floor(timeLeft / 3600);
@@ -70,44 +115,62 @@ export default function Home() {
 
   useEffect(() => {
     if (isRunning) {
+      // Ensure we have an endTime if we just started or resumed
+      if (!endTimeRef.current) {
+        endTimeRef.current = Date.now() + timeLeft * 1000;
+        localStorage.setItem('focuswareEndTime', endTimeRef.current.toString());
+      }
+      localStorage.setItem('focuswareIsRunning', 'true');
+      localStorage.setItem('focuswareIsBreak', isBreak.toString());
+
       intervalRef.current = setInterval(() => {
-        setTimeLeft(prev => {
-          if (prev <= 1) {
-            clearInterval(intervalRef.current);
-            setIsRunning(false);
-            
-            // Play notification sound
-            if (audioRef.current) {
-              audioRef.current.play().catch(e => console.log("Audio play failed:", e));
-            }
-            
-            // Session ended
-            if (!isBreak) {
-              setCompletedSessions(prev => prev + 1);
-              setShowCompletionMessage(true);
-              
-              // Save session to history
-              const now = new Date();
-              setSessionHistory(prev => [...prev, {
-                date: now.toLocaleDateString(),
-                time: now.toLocaleTimeString(),
-                duration: Math.floor(initialTime / 60),
-                notes: sessionNotes || "No notes"
-              }]);
-              
-              setTimeout(() => setShowCompletionMessage(false), 3000);
-              setIsBreak(true);
-              return breakTime * 60; // Custom break time
-            } else {
-              setIsBreak(false);
-              return initialTime; // Back to focus time
-            }
+        const now = Date.now();
+        const remaining = Math.round((endTimeRef.current - now) / 1000);
+
+        if (remaining <= 0) {
+          clearInterval(intervalRef.current);
+          setIsRunning(false);
+          endTimeRef.current = null;
+          localStorage.removeItem('focuswareEndTime');
+          localStorage.setItem('focuswareIsRunning', 'false');
+          
+          // Play notification sound
+          if (audioRef.current) {
+            audioRef.current.play().catch(e => console.log("Audio play failed:", e));
           }
-          return prev - 1;
-        });
+          
+          // Session ended
+          if (!isBreak) {
+            setCompletedSessions(prev => prev + 1);
+            setShowCompletionMessage(true);
+            showNotification('Focus Session Complete!', 'Time to take a break.');
+            
+            // Save session to history
+            const sessionDate = new Date();
+            setSessionHistory(prev => [...prev, {
+              date: sessionDate.toLocaleDateString(),
+              time: sessionDate.toLocaleTimeString(),
+              duration: Math.floor(initialTime / 60),
+              notes: sessionNotes || "No notes"
+            }]);
+            
+            setTimeout(() => setShowCompletionMessage(false), 3000);
+            setIsBreak(true);
+            const nextDuration = breakTime * 60;
+            setTimeLeft(nextDuration);
+            return;
+          } else {
+            setIsBreak(false);
+            showNotification('Break Over!', 'Ready to focus again?');
+            setTimeLeft(initialTime);
+            return;
+          }
+        }
+        setTimeLeft(remaining);
       }, 1000);
-    } else if (intervalRef.current) {
-      clearInterval(intervalRef.current);
+    } else {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      localStorage.setItem('focuswareIsRunning', 'false');
     }
 
     return () => {
@@ -168,17 +231,25 @@ export default function Home() {
     setShowSettings(false);
   };
 
-  const startTimer = () => {
+  const startTimer = async () => {
+    await requestNotificationPermission();
+    endTimeRef.current = Date.now() + timeLeft * 1000;
+    localStorage.setItem('focuswareEndTime', endTimeRef.current.toString());
     setIsRunning(true);
+    showNotification(isBreak ? 'Break Started' : 'Focus Started', `Timer set for ${formatTime(timeLeft)}`);
   };
 
   const pauseTimer = () => {
     setIsRunning(false);
+    endTimeRef.current = null;
+    localStorage.removeItem('focuswareEndTime');
   };
 
   const resetTimer = () => {
     setIsRunning(false);
     setIsBreak(false);
+    endTimeRef.current = null;
+    localStorage.removeItem('focuswareEndTime');
     setTimeLeft(initialTime);
   };
 
