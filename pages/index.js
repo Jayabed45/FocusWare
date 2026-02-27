@@ -48,6 +48,20 @@ export default function Home() {
 
   // Sync with localStorage on mount to recover active timer
   useEffect(() => {
+    // Register service worker
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('/service-worker.js').then(
+          function(registration) {
+            console.log('ServiceWorker registration successful with scope: ', registration.scope);
+          },
+          function(err) {
+            console.log('ServiceWorker registration failed: ', err);
+          }
+        );
+      });
+    }
+
     const savedEndTime = localStorage.getItem('focuswareEndTime');
     const savedIsRunning = localStorage.getItem('focuswareIsRunning') === 'true';
     const savedIsBreak = localStorage.getItem('focuswareIsBreak') === 'true';
@@ -338,6 +352,10 @@ export default function Home() {
           {isBreak ? 'Break Time' : 'FocusWare'} | 
           {formatTime(timeLeft)}
         </title>
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#10b981" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black" />
       </Head>
 
       {/* Hidden audio element for notification */}
